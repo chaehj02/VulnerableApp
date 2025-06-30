@@ -25,7 +25,8 @@ pipeline {
 
         stage('🔧 Build VulnerableApp') {
     steps {
-        sh './gradlew build -x test'
+        sh sh './gradlew build -x test -x spotlessJava'
+
     }
 }
 

@@ -2,70 +2,60 @@ pipeline {
     agent { label 'master' }
 
     environment {
-        ECR_REPO       = "159773342061.dkr.ecr.ap-northeast-2.amazonaws.com/jenkins-demo"
-        IMAGE_TAG      = "${env.BUILD_NUMBER}"
-        JAVA_HOME = "/usr/lib/jvm/java-17-amazon-corretto"
-        PATH           = "${env.JAVA_HOME}/bin:${env.PATH}"
-        REGION         = "ap-northeast-2"
-        DAST_HOST      = "172.31.8.198"
-        SSH_CRED_ID    = "jenkin_sv"
-        ZAP_SCRIPT     = "zap_webgoat.sh"
-        CONTAINER_NAME = "webgoat-test"
-        S3_BUCKET      = "webgoat-deploy-bucket"
-        DEPLOY_APP     = "webgoat-cd-app"
-        DEPLOY_GROUP   = "webgoat-deployment-group"
-        BUNDLE         = "webgoat-deploy-bundle.zip"
-        EC2_INSTANCE_ID = "i-0f3dde2aad32ae6ce"
+        JAVA_HOME   = "/usr/lib/jvm/java-17-amazon-corretto.x86_64"
+        PATH        = "${env.JAVA_HOME}/bin:${env.PATH}"
+        SSH_CRED_ID = "WH1_key"
+        DYNAMIC_IMAGE_TAG = "dev-${env.BUILD_NUMBER}-${sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()}"
     }
 
     stages {
         stage('📦 Checkout') {
-            steps { checkout scm }
-        }
-
-        stage('🔧 Build VulnerableApp') {
-    steps {
-        sh './gradlew build -x test -x spotlessCheck -x spotlessJavaCheck -x spotlessApply'
-
-    }
-}
-
-        stage('🐳 Docker Build & Push') {
             steps {
-                sh "docker build -t ${ECR_REPO}:${IMAGE_TAG} ."
-                sh """
-                    aws ecr get-login-password --region ${REGION} \
-                      | docker login --username AWS --password-stdin ${ECR_REPO}
-                    docker push ${ECR_REPO}:${IMAGE_TAG}
-                """
+                checkout scm
+            }
+        }
+        
+
+        stage('🔨 Build ') {
+            steps {
+                  sh './gradlew build -x test -x spotlessCheck -x spotlessJavaCheck -x spotlessApply'
+            }
+        }
+        
+    
+
+
+        stage('🐳 Docker Build') {
+            steps {
+                sh 'DYNAMIC_IMAGE_TAG=${DYNAMIC_IMAGE_TAG} components/scripts/Docker_Build.sh'
             }
         }
 
+        stage('🔐 ECR Login') {
+            steps {
+                sh 'components/scripts/ECR_Login.sh'
+            }
+        }
+
+        stage('🚀 Push to ECR') {
+            steps {
+                sh 'DYNAMIC_IMAGE_TAG=${DYNAMIC_IMAGE_TAG} components/scripts/Push_to_ECR.sh'
+            }
+        }
+
+        stage('🔍 ZAP 스캔 및 SecurityHub 전송') {
+            agent { label 'DAST' }
+            steps {
+                // sh 'DYNAMIC_IMAGE_TAG=${DYNAMIC_IMAGE_TAG} components/scripts/DAST_Zap_Scan.sh'
+                //sh 'nohup components/scripts/DAST_Zap_Scan.sh > zap_bg.log 2>&1 &'
+            }
+        }
 
         stage('🧩 Generate taskdef.json') {
             steps {
                 script {
-                    def taskdef = """{
-  \"family\": \"webgoat-taskdef\",
-  \"networkMode\": \"awsvpc\",
-  \"containerDefinitions\": [
-    {
-      \"name\": \"webgoat\",
-      \"image\": \"${ECR_REPO}:${IMAGE_TAG}\",
-      \"memory\": 512,
-      \"cpu\": 256,
-      \"essential\": true,
-      \"portMappings\": [
-        {\"containerPort\": 8080, \"protocol\": \"tcp\"}
-      ]
-    }
-  ],
-  \"requiresCompatibilities\": [\"FARGATE\"],
-  \"cpu\": \"256\",
-  \"memory\": \"512\",
-  \"executionRoleArn\": \"arn:aws:iam::159773342061:role/ecsTaskExecutionRole\"
-}"""
-                    writeFile file: 'taskdef.json', text: taskdef
+                    def runTaskDefGen = load 'components/functions/generateTaskDef.groovy'
+                    runTaskDefGen(env)
                 }
             }
         }
@@ -73,43 +63,31 @@ pipeline {
         stage('📄 Generate appspec.yaml') {
             steps {
                 script {
-                    def taskDefArn = sh(
-                      script: "aws ecs register-task-definition --cli-input-json file://taskdef.json --query 'taskDefinition.taskDefinitionArn' --region ${REGION} --output text",
-                      returnStdout: true
-                    ).trim()
-                    def appspec = """version: 1
-Resources:
-  - TargetService:
-      Type: AWS::ECS::Service
-      Properties:
-        TaskDefinition: \"${taskDefArn}\"
-        LoadBalancerInfo:
-          ContainerName: \"webgoat\"
-          ContainerPort: 8080
-"""
-                    writeFile file: 'appspec.yaml', text: appspec
+                    def runAppSpecGen = load 'components/functions/generateAppspecAndWrite.groovy'
+                    runAppSpecGen(env.REGION)
                 }
             }
         }
 
-        stage('📦 Bundle & Deploy') {
+        stage('📦 Bundle for CodeDeploy') {
             steps {
-                sh "zip -r ${BUNDLE} appspec.yaml Dockerfile taskdef.json"
-                sh """
-                    aws s3 cp ${BUNDLE} s3://${S3_BUCKET}/${BUNDLE} --region ${REGION}
-                    aws deploy create-deployment \
-                      --application-name ${DEPLOY_APP} \
-                      --deployment-group-name ${DEPLOY_GROUP} \
-                      --deployment-config-name CodeDeployDefault.ECSAllAtOnce \
-                      --s3-location bucket=${S3_BUCKET},bundleType=zip,key=${BUNDLE} \
-                      --region ${REGION}
-                """
+                sh 'components/scripts/Bundle_for_CodeDeploy.sh'
+            }
+        }
+
+        stage('🚀 Deploy via CodeDeploy') {
+            steps {
+                sh 'components/scripts/Deploy_via_CodeDeploy.sh'
             }
         }
     }
 
     post {
-        success { echo "✅ CD & Security Test 모두 완료!" }
-        failure { echo "❌ 파이프라인 실패, 로그 확인 요망." }
+        success {
+            echo "✅ Successfully built, pushed, and deployed!"
+        }
+        failure {
+            echo "❌ Build or deployment failed. Check logs!"
+        }
     }
 }

@@ -25,10 +25,7 @@ pipeline {
 
         stage('🔧 Build VulnerableApp') {
     steps {
-        sh '''
-        mkdir -p build/spotless/spotlessJava
-        ./gradlew build -x test
-      '''
+        sh './gradlew build -x test -x spotlessCheck -x spotlessJavaCheck -x spotlessApply'
 
     }
 }

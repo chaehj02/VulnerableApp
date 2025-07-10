@@ -40,6 +40,11 @@ pipeline {
                 """
             }
         }
+        stage('🐳 Docker Build') {
+            steps {
+                sh 'components/scripts/Docker_Build.sh VulnerableApp'
+            }
+        }
 
 
         stage('🧩 Generate taskdef.json') {

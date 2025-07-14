@@ -125,12 +125,13 @@ if aws s3 cp "$ZAP_RESULT_FILE" "s3://${S3_BUCKET_DAST}/${s3_key}" --region "$RE
 else
     echo "⚠️ S3 업로드 실패 (무시)"
 fi
-
+REPORT_DIR="$HOME/report"
 echo "[*] 리포트 파일을 /report로 이동"
-
 if [ -f "$ZAP_RESULT_FILE" ]; then
-    mv "$ZAP_RESULT_FILE" "/report/$(basename "$ZAP_RESULT_FILE")"
-    echo "✅ 파일 이동 완료: /report/$(basename "$ZAP_RESULT_FILE")"
+    mv "$ZAP_RESULT_FILE" "$REPORT_DIR/$(basename "$ZAP_RESULT_FILE")"
+    echo "✅ 파일 이동 완료: $REPORT_DIR/$(basename "$ZAP_RESULT_FILE")"
+else
+    echo "⚠️ 이동할 파일이 없습니다"
 fi
 
 echo "[*] 정리 중..."

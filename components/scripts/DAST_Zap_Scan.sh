@@ -120,8 +120,8 @@ fi
 echo "[+] ZAP 결과 파일 확인: $ZAP_RESULT_FILE"
 
 echo "[*] S3 업로드"
-if aws s3 cp "$ZAP_RESULT_FILE" "s3://${S3_BUCKET}/${s3_key}" --region "$REGION"; then
-    echo "✅ S3 업로드 완료 → s3://${S3_BUCKET}/${s3_key}"
+if aws s3 cp "$ZAP_RESULT_FILE" "s3://${S3_BUCKET_DAST}/${s3_key}" --region "$REGION"; then
+    echo "✅ S3 업로드 완료 → s3://${S3_BUCKET_DAST}/${s3_key}"
 else
     echo "⚠️ S3 업로드 실패 (무시)"
 fi

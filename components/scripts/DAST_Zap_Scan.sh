@@ -127,7 +127,7 @@ else
 fi
 
 echo "[*] 리포트 파일을 /report로 이동"
-mkdir -p /report
+
 if [ -f "$ZAP_RESULT_FILE" ]; then
     mv "$ZAP_RESULT_FILE" "/report/$(basename "$ZAP_RESULT_FILE")"
     echo "✅ 파일 이동 완료: /report/$(basename "$ZAP_RESULT_FILE")"
